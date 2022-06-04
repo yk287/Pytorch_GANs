@@ -38,6 +38,7 @@ def image_to_gif(directory, filenames, duration=0.5, destination=None, gifname=N
         images.append(imageio.imread(os.path.join('%s' %directory, '%s' %filename)))
     imageio.mimsave('%s%s.gif' % (directory, gifname), images, duration=duration)
 
+
 def sample_noise(batch_size, dim):
 
     L = -1

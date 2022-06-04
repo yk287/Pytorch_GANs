@@ -75,6 +75,79 @@ class generator(nn.Module):
         return self.model(x)
 
 
+def train(
+        G,
+        D,
+        G_optim,
+        D_optim,
+        criterion,
+        dataloader,
+        opts,
+        ):
+
+    iter_count = 0
+    filelist = []
+
+    x, _ = next(iter(dataloader))
+
+    image_shape = x.shape
+
+    for epoch in range(opts.epoch):
+        for x, _ in dataloader:
+
+            G_optim.zero_grad()
+            # Get real images and flatten it. This is needed as the model uses nn.Linear()
+            x = x.reshape((-1, opts.D_input_size))
+
+            # sample random noise of size opts.noise_dim
+            g_fake_seed = sample_noise(len(x), opts.noise_dim)
+
+            # generate images
+            fake_images = G(g_fake_seed.to(device))
+
+            # generate logits for the fake images
+            logits_fake = D(fake_images)
+
+            # generate labels
+            labels = torch.ones(logits_fake.size()).to(device)
+
+            G_loss = criterion(logits_fake, labels)
+
+            G_loss.backward()
+            G_optim.step()
+
+            # Train discriminator
+            D_optim.zero_grad()
+
+            # discriminate
+            logits_real = D(x.to(device))
+            logits_fake = D(fake_images.detach())  # detach so the gradient doesn't propagate
+
+            # get the loss
+            loss_real = criterion(logits_real, labels)
+            loss_fake = criterion(logits_fake, 1 - labels)
+
+            # combine the losses
+            D_loss = loss_real + loss_fake
+
+            D_loss.backward()
+            D_optim.step()
+
+            if (iter_count % opts.print_every == 0):
+                print('Iter: {}, D: {:.4}, G:{:.4}'.format(iter_count, D_loss.item(), G_loss.item()))
+
+            if (iter_count % opts.show_every == 0):
+                imgs_numpy = fake_images.view(image_shape).data.cpu().numpy()
+
+                '''filename used for saving the image'''
+                filelist.append(save_images_to_directory(imgs_numpy, opts.directory, 'generated_image_%s.png' % iter_count))
+
+            iter_count += 1
+
+    # create a gif
+    image_to_gif(opts.directory + '/', filelist, duration=1)
+
+
 def main(opts):
 
     # Define a transform to normalize the data
@@ -102,76 +175,12 @@ def main(opts):
         print(D)
         print(G)
 
-    iter_count = 0
-    filelist = []
-
-    directory = 'img'
-
-    if not os.path.isdir(directory):
-        os.mkdir(directory)
+    if not os.path.isdir(opts.directory):
+        os.mkdir(opts.directory)
 
     criterion = nn.MSELoss()
 
-    x, _ = next(iter(trainloader))
-
-    image_shape = x.shape
-
-    for epoch in range(opts.epoch):
-        for x, _ in trainloader:
-
-            G_solver.zero_grad()
-            # Get real images and flatten it. This is needed as the model uses nn.Linear()
-            x = x.reshape((-1, opts.D_input_size))
-
-            # sample random noise of size opts.noise_dim
-            g_fake_seed = sample_noise(len(x), opts.noise_dim)
-
-            # generate images
-            fake_images = G(g_fake_seed.to(device))
-
-            # generate logits for the fake images
-            logits_fake = D(fake_images)
-
-            # generate labels
-            labels = torch.ones(logits_fake.size()).to(device)
-
-            G_loss = criterion(logits_fake, labels)
-
-
-            G_loss.backward()
-            G_solver.step()
-
-            # Train discriminator
-            D_solver.zero_grad()
-
-            # discriminate
-            logits_real = D(x.to(device))
-            logits_fake = D(fake_images.detach()) # detach so the gradient doesn't propagate
-
-            # get the loss
-            loss_real = criterion(logits_real, labels)
-            loss_fake = criterion(logits_fake, 1 - labels)
-
-            # combine the losses
-            D_loss = loss_real + loss_fake
-
-            D_loss.backward()
-            D_solver.step()
-
-            if (iter_count % opts.print_every == 0):
-                print('Iter: {}, D: {:.4}, G:{:.4}'.format(iter_count, D_loss.item(), G_loss.item()))
-
-            if (iter_count % opts.show_every == 0):
-                imgs_numpy = fake_images.view(image_shape).data.cpu().numpy()
-
-                '''filename used for saving the image'''
-                filelist.append(save_images_to_directory(imgs_numpy, directory, 'generated_image_%s.png' % iter_count))
-
-            iter_count += 1
-
-    #create a gif
-    image_to_gif('./img/', filelist, duration=1)
-
+    train(G, D, G_solver, D_solver, criterion, trainloader, opts)
 
 if __name__ == '__main__':
     # options
