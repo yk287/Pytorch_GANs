@@ -36,13 +36,15 @@ class options():
         self.parser.add_argument('--G_out_activation', type=str, nargs='?', default='tanh', help='final output activator')
         self.parser.add_argument('--image_size', type=int, nargs='?', default=28, help='Image Size')
         self.parser.add_argument('--image_channel', type=int, nargs='?', default=1, help='Image channels')
+        self.parser.add_argument('--target_is', type=float, nargs='?', default=4.0, help='Target Inception Score')
+
 
         #RAY Options
         self.parser.add_argument('--cpu_use', type=int, nargs='?', default=3, help='Number of CPUs to use')
         self.parser.add_argument('--gpu_use', type=float, nargs='?', default=.125, help='Fraction of GPUs to use')
-        self.parser.add_argument('--tune_iter', type=int, nargs='?', default=1000, help='number of tuning steps')
+        self.parser.add_argument('--tune_iter', type=int, nargs='?', default=23000, help='number of tuning steps')
         self.parser.add_argument('--num_sample', type=int, nargs='?', default=8, help='number of samples')
-        self.parser.add_argument('--perturb_iter', type=int, nargs='?', default=5, help='number of perturb iterations')
+        self.parser.add_argument('--perturb_iter', type=int, nargs='?', default=100, help='number of perturb iterations')
         self.parser.add_argument('--train_iterations_per_step', type=int, nargs='?', default=5, help='number of train iter per STEP()')
         self.parser.add_argument('--model_path', type=str, nargs='?', default='/home/youngwook/.ray/models/mnist_cnn.pt', help='directory where inception model gets saved')
 

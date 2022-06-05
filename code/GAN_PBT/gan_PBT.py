@@ -236,8 +236,6 @@ def main(config, checkpoint_dir=None):
 
     if checkpoint_dir is not None:
 
-        print(checkpoint_dir)
-
         path = os.path.join(checkpoint_dir, "checkpoint")
         checkpoint = torch.load(path)
         D.load_state_dict(checkpoint["D"])
@@ -260,12 +258,14 @@ def main(config, checkpoint_dir=None):
         trainset = datasets.MNIST('MNIST_data/', download=True, train=True, transform=transform)
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=opts.batch, shuffle=True, drop_last=True)
 
+
     if not os.path.isdir(opts.directory):
         os.mkdir(opts.directory)
 
     criterion = nn.MSELoss()
 
-    while True:
+    is_score = 0
+    while is_score < opts.target_is:
 
         lossG, lossD, is_score = train(G,
                                        D,
@@ -350,18 +350,18 @@ def pbt(opts):
         perturbation_interval=opts.perturb_iter,
         hyperparam_mutations={
             # distribution for resampling
-            #"G_lr": lambda: np.random.uniform(1e-3, 1e-5),
-            #"D_lr": lambda: np.random.uniform(1e-3, 1e-5),
-            "batch": lambda: np.random.choice([32, 64, 128, 256, 512], 1),
+            "G_lr": lambda: np.random.uniform(1e-3, 1e-5),
+            "D_lr": lambda: np.random.uniform(1e-3, 1e-5),
+            #"batch": lambda: np.random.choice([32, 64, 128, 256, 512], 1),
         },
     )
 
     config = {
             "opts": opts,
             "use_gpu": True,
-            #"G_lr": tune.choice([0.00005, 0.0001, 0.0002, 0.0005]),
-            #"D_lr": tune.choice([0.00005, 0.0001, 0.0002, 0.0005]),
-            "batch": tune.choice([32, 64, 128, 256, 512]),
+            "G_lr": tune.choice([0.00005, 0.0001, 0.0002, 0.0005]),
+            "D_lr": tune.choice([0.00005, 0.0001, 0.0002, 0.0005]),
+            #"batch": tune.choice([32, 64, 128, 256, 512]),
             "mnist_model_ref": mnist_model_ref,
         }
 
