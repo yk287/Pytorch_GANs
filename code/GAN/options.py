@@ -20,6 +20,7 @@ class options():
 
         self.parser.add_argument('--lrelu_val', type=int, nargs='?', default=0.01, help='leaky Relu Value')
         self.parser.add_argument('--directory', type=str, nargs='?', default='img', help='directory where image gets saved')
+        self.parser.add_argument('--model_path', type=str, nargs='?', default='/home/youngwook/.ray/models/mnist_cnn.pt', help='directory where inception model gets saved')
 
         #Discriminator Options
         self.parser.add_argument('--D_hidden', type=int, nargs='+', default=[256, 256], help='hidden layer configuration in a list form for D')

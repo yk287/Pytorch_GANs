@@ -3,9 +3,17 @@
 import torch
 import torch.nn as nn
 
+from torch.nn import functional as F
+from torch.autograd import Variable
+
 #load mnist dataset and define network
 from torchvision import datasets, transforms
 
+from scipy.stats import entropy
+
+import urllib.request
+
+import numpy as np
 # get device.
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -75,6 +83,64 @@ class generator(nn.Module):
         return self.model(x)
 
 
+# inception model
+# straight from https://github.com/ray-project/ray/blob/master/python/ray/tune/examples/pbt_dcgan_mnist/common.py
+class Net(nn.Module):
+    """
+    LeNet for MNist classification, used for inception_score
+    """
+
+    def __init__(self):
+        super(Net, self).__init__()
+        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
+        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
+        self.conv2_drop = nn.Dropout2d()
+        self.fc1 = nn.Linear(320, 50)
+        self.fc2 = nn.Linear(50, 10)
+
+    def forward(self, x):
+        x = F.relu(F.max_pool2d(self.conv1(x), 2))
+        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
+        x = x.view(-1, 320)
+        x = F.relu(self.fc1(x))
+        x = F.dropout(x, training=self.training)
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
+
+# inception score
+def inception_score(imgs, inception_model, batch_size=32, splits=1):
+    N = len(imgs)
+    dtype = torch.FloatTensor
+    dataloader = torch.utils.data.DataLoader(imgs, batch_size=batch_size)
+    cm = inception_model
+    up = nn.Upsample(size=(28, 28), mode="bilinear", align_corners=True).type(dtype)
+
+    def get_pred(x):
+        x = up(x)
+        x = cm(x)
+        return F.softmax(x, dim=-1).data.cpu().numpy()
+
+    preds = np.zeros((N, 10))
+    for i, batch in enumerate(dataloader, 0):
+        batch = batch.type(dtype)
+        batchv = Variable(batch)
+        batch_size_i = batch.size()[0]
+        preds[i * batch_size : i * batch_size + batch_size_i] = get_pred(batchv)
+
+    # Now compute the mean kl-div
+    split_scores = []
+    for k in range(splits):
+        part = preds[k * (N // splits) : (k + 1) * (N // splits), :]
+        py = np.mean(part, axis=0)
+        scores = []
+        for i in range(part.shape[0]):
+            pyx = part[i, :]
+            scores.append(entropy(pyx, py))
+        split_scores.append(np.exp(np.mean(scores)))
+
+    return np.mean(split_scores), np.std(split_scores)
+
+
 def train(
         G,
         D,
@@ -82,6 +148,7 @@ def train(
         D_optim,
         criterion,
         dataloader,
+        mnist_cnn,
         opts,
         ):
 
@@ -133,8 +200,10 @@ def train(
             D_loss.backward()
             D_optim.step()
 
+            is_score, is_std = inception_score(fake_images.reshape(image_shape), mnist_cnn)
+
             if (iter_count % opts.print_every == 0):
-                print('Iter: {}, D: {:.4}, G:{:.4}'.format(iter_count, D_loss.item(), G_loss.item()))
+                print('Iter: {}, D: {:.4}, G:{:.4}, IS:{:.4}'.format(iter_count, D_loss.item(), G_loss.item(), is_score))
 
             if (iter_count % opts.show_every == 0):
                 imgs_numpy = fake_images.view(image_shape).data.cpu().numpy()
@@ -158,7 +227,7 @@ def main(opts):
 
     # Download and load the training data
     trainset = datasets.MNIST('MNIST_data/', download=True, train=True, transform=transform)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=opts.batch, shuffle=True)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=opts.batch, shuffle=True, drop_last=True)
 
 
     # Init discriminator
@@ -178,9 +247,25 @@ def main(opts):
     if not os.path.isdir(opts.directory):
         os.mkdir(opts.directory)
 
+    # Download a pre-trained MNIST model for inception score calculation.
+    # This is a tiny model (<100kb).
+    if not os.path.exists(opts.model_path):
+        print("downloading model")
+        os.makedirs(os.path.dirname(opts.model_path), exist_ok=True)
+        urllib.request.urlretrieve(
+            "https://github.com/ray-project/ray/raw/master/python/ray/tune/"
+            "model/mnist_cnn.pt",
+            opts.model_path,
+        )
+
+    # load the pretrained mnist classification model for inception_score
+    mnist_cnn = Net()
+    mnist_cnn.load_state_dict(torch.load(opts.model_path))
+    mnist_cnn.eval()
+
     criterion = nn.MSELoss()
 
-    train(G, D, G_solver, D_solver, criterion, trainloader, opts)
+    train(G, D, G_solver, D_solver, criterion, trainloader, mnist_cnn, opts)
 
 if __name__ == '__main__':
     # options

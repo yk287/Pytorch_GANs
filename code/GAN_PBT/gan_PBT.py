@@ -224,11 +224,6 @@ def main(config, checkpoint_dir=None):
         transforms.transforms.Normalize((0.5), (0.5))
     ])
 
-    with FileLock(os.path.expanduser("~/.data.lock")):
-        # Download and load the training data
-        trainset = datasets.MNIST('MNIST_data/', download=True, train=True, transform=transform)
-        trainloader = torch.utils.data.DataLoader(trainset, batch_size=opts.batch, shuffle=True)
-
     # Init discriminator
     D = discriminator(opts).to(device)
 
@@ -257,6 +252,13 @@ def main(config, checkpoint_dir=None):
         if "G_lr" in config:
             for param_group in G_solver.param_groups:
                 param_group["lr"] = config["G_lr"]
+        if "batch" in config:
+            opts.batch = config['batch']
+
+    with FileLock(os.path.expanduser("~/.data.lock")):
+        # Download and load the training data
+        trainset = datasets.MNIST('MNIST_data/', download=True, train=True, transform=transform)
+        trainloader = torch.utils.data.DataLoader(trainset, batch_size=opts.batch, shuffle=True, drop_last=True)
 
     if not os.path.isdir(opts.directory):
         os.mkdir(opts.directory)
@@ -291,18 +293,34 @@ def main(config, checkpoint_dir=None):
             )
         tune.report(iters=step, lossg=lossG, lossd=lossD, is_score=is_score)
 
-def show_result(checkpoint_paths, opts):
+def show_result(config, checkpoint_dir):
 
-    for G_path in checkpoint_paths:
+    opts = config['opts']
 
-        # Init generator
-        G = generator(opts).to(device)
-        G.load_state_dict(torch.load(G_path)["Gmodel"])
+    filelist = []
+    
+    # Init generator
+    G = generator(opts).to(device)
 
+    if checkpoint_dir is not None:
 
-        with torch.no_grad():
-            fake = loadedG(fixed_noise).detach().cpu()
-        img_list.append(vutils.make_grid(fake, padding=2, normalize=True))
+        path = os.path.join(checkpoint_dir, "checkpoint")
+        checkpoint = torch.load(path)
+        G.load_state_dict(checkpoint["G"])
+
+    
+    for i in range(5):
+        # sample random noise of size opts.noise_dim
+        g_fake_seed = sample_noise(opts.batch, opts.noise_dim)
+        
+        # generate images
+        fake_images = G(g_fake_seed.to(device)).reshape(-1, opts.image_channel, opts.image_size, opts.image_size)
+        '''filename used for saving the image'''
+        filelist.append(save_images_to_directory(fake_images.data.cpu().numpy(), opts.directory, 'generated_image_%s.png' % i))
+        
+    # create a gif
+    image_to_gif(opts.directory + '/', filelist, duration=1)
+
 
 
 def pbt(opts):
@@ -332,16 +350,18 @@ def pbt(opts):
         perturbation_interval=opts.perturb_iter,
         hyperparam_mutations={
             # distribution for resampling
-            "G_lr": lambda: np.random.uniform(1e-2, 1e-5),
-            "D_lr": lambda: np.random.uniform(1e-2, 1e-5),
+            #"G_lr": lambda: np.random.uniform(1e-3, 1e-5),
+            #"D_lr": lambda: np.random.uniform(1e-3, 1e-5),
+            "batch": lambda: np.random.choice([32, 64, 128, 256, 512], 1),
         },
     )
 
     config = {
             "opts": opts,
             "use_gpu": True,
-            "G_lr": tune.choice([0.0001, 0.0002, 0.0005]),
-            "D_lr": tune.choice([0.0001, 0.0002, 0.0005]),
+            #"G_lr": tune.choice([0.00005, 0.0001, 0.0002, 0.0005]),
+            #"D_lr": tune.choice([0.00005, 0.0001, 0.0002, 0.0005]),
+            "batch": tune.choice([32, 64, 128, 256, 512]),
             "mnist_model_ref": mnist_model_ref,
         }
 
@@ -371,8 +391,9 @@ def pbt(opts):
     ]
 
     best_trial = analysis.get_best_trial("is_score", "max", "last-5-avg")
+    best_checkpoint = analysis.get_best_checkpoint(best_trial, metric="is_score")
 
-    show_result(best_trial):
+    show_result(config, best_checkpoint)
 
 
 if __name__ == '__main__':
@@ -383,3 +404,4 @@ if __name__ == '__main__':
     opts = options.parse()
 
     pbt(opts)
+
