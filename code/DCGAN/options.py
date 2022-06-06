@@ -23,15 +23,15 @@ class options():
         self.parser.add_argument('--directory', type=str, nargs='?', default='img', help='directory where image gets saved')
 
         #Discriminator Options
-        self.parser.add_argument('--D_hidden', type=int, nargs='+', default=[256, 256], help='hidden layer configuration in a list form for D')
+        self.parser.add_argument('--D_hidden', type=int, nargs='+', default=3, help='Depth of Discriminator Network')
         self.parser.add_argument('--D_activation', type=str, nargs='?', default='lrelu', help='Activation function for the discriminator')
         self.parser.add_argument('--D_input_size', type=int, nargs='?', default=784, help='size of input for the discriminator')
         self.parser.add_argument('--D_output_size', type=int, nargs='?', default=1, help='size of output for the discriminator')
 
         #Generator Options
-        self.parser.add_argument('--G_hidden', type=int, nargs='+', default=[1024, 1024], help='hidden layer configuration in a list form for G')
+        self.parser.add_argument('--G_hidden', type=int, nargs='+', default=8, help='Depth of Generator Network')
         self.parser.add_argument('--G_activation', type=str, nargs='?', default='relu', help='Activation function for the generator')
-        self.parser.add_argument('--noise_dim', type=int, nargs='?', default=96, help='size of noise input for the generator')
+        self.parser.add_argument('--noise_dim', type=int, nargs='?', default=512, help='size of noise input for the generator')
         self.parser.add_argument('--G_output_size', type=int, nargs='?', default=784, help='size of output for the discriminator')
         self.parser.add_argument('--G_out_activation', type=str, nargs='?', default='tanh', help='final output activator')
         self.parser.add_argument('--image_size', type=int, nargs='?', default=28, help='Image Size')
