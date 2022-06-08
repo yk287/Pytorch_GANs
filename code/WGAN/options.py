@@ -23,14 +23,17 @@ class options():
         self.parser.add_argument('--directory', type=str, nargs='?', default='img', help='directory where image gets saved')
 
         #Discriminator Options
-        self.parser.add_argument('--D_hidden', type=int, nargs='+', default=[256, 256], help='hidden layer configuration in a list form for D')
+        self.parser.add_argument('--D_hidden', type=int, nargs='+', default=[512, 256, 128], help='hidden layer configuration in a list form for D')
         self.parser.add_argument('--D_activation', type=str, nargs='?', default='lrelu', help='Activation function for the discriminator')
         self.parser.add_argument('--D_input_size', type=int, nargs='?', default=784, help='size of input for the discriminator')
         self.parser.add_argument('--D_output_size', type=int, nargs='?', default=1, help='size of output for the discriminator')
+        self.parser.add_argument('--clip_value', type=float, nargs='?', default=0.01, help='What the max value for parameters can be (WGAN)')
+        self.parser.add_argument('--n_critic', type=int, nargs='?', default=5,
+                                 help='number of times to train the critic before generator gets trained')
 
-        # Generator Options
+        #Generator Options
         self.parser.add_argument('--G_hidden', type=int, nargs='+', default=[128, 256, 512, 1024], help='hidden layer configuration in a list form for G')
-        self.parser.add_argument('--G_activation', type=str, nargs='?', default='relu', help='Activation function for the generator')
+        self.parser.add_argument('--G_activation', type=str, nargs='?', default='lrelu', help='Activation function for the generator')
         self.parser.add_argument('--noise_dim', type=int, nargs='?', default=96, help='size of noise input for the generator')
         self.parser.add_argument('--G_output_size', type=int, nargs='?', default=784, help='size of output for the discriminator')
         self.parser.add_argument('--G_out_activation', type=str, nargs='?', default='tanh', help='final output activator')
@@ -38,14 +41,13 @@ class options():
         self.parser.add_argument('--image_channel', type=int, nargs='?', default=1, help='Image channels')
         self.parser.add_argument('--target_is', type=float, nargs='?', default=4.0, help='Target Inception Score')
 
-
         #RAY Options
         self.parser.add_argument('--cpu_use', type=int, nargs='?', default=3, help='Number of CPUs to use')
         self.parser.add_argument('--gpu_use', type=float, nargs='?', default=.125, help='Fraction of GPUs to use')
-        self.parser.add_argument('--tune_iter', type=int, nargs='?', default=2000, help='number of tuning steps')
+        self.parser.add_argument('--tune_iter', type=int, nargs='?', default=750, help='number of tuning steps')
         self.parser.add_argument('--num_sample', type=int, nargs='?', default=8, help='number of samples')
-        self.parser.add_argument('--perturb_iter', type=int, nargs='?', default=100, help='number of perturb iterations')
-        self.parser.add_argument('--train_iterations_per_step', type=int, nargs='?', default=5, help='number of train iter per STEP()')
+        self.parser.add_argument('--perturb_iter', type=int, nargs='?', default=5, help='number of perturb iterations')
+        self.parser.add_argument('--train_iterations_per_step', type=int, nargs='?', default=100, help='number of train iter per STEP()')
         self.parser.add_argument('--model_path', type=str, nargs='?', default='/home/youngwook/.ray/models/mnist_cnn.pt', help='directory where inception model gets saved')
 
     def parse(self):

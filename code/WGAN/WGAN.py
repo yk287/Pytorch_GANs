@@ -1,10 +1,11 @@
+
 # torch
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
-# load mnist dataset and define network
+#load mnist dataset and define network
 from torchvision import datasets, transforms
 
 import numpy as np
@@ -14,9 +15,10 @@ import urllib.request
 
 from filelock import FileLock
 
+
 # get device.
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
+#device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
 
 from util import sample_noise, save_images_to_directory, image_to_gif
 
@@ -27,90 +29,55 @@ from ray import tune
 from ray.tune import CLIReporter
 from ray.tune.schedulers import PopulationBasedTraining
 
-class ConvDown(nn.Module):
-    def __init__(self, ch_in, kernel, stride, padding, opts, ch_out=None, bias=False, Activation='relu', Norm=False):
-        super(ConvDown, self).__init__()
+"""
+class Linear(nn.Module):
+    def __init__(self, dim_in, dim_out, opts, Activation='relu', Norm=True):
+        super(Linear, self).__init__()
 
-        self.opts = opts
-
-        if ch_out is None:
-            ch_out = ch_in * 2
-        steps = [nn.Conv2d(ch_in, ch_out, kernel_size=kernel, stride=stride, padding=padding, bias=bias)]
+        steps = [nn.Linear(dim_in, dim_out)]
 
         if Norm:
-            steps.append(nn.BatchNorm1d(ch_out))
+            steps.append(nn.BatchNorm1d(dim_out))
 
         if Activation == 'relu':
             steps.append(nn.ReLU())
         elif Activation == 'lrelu':
             steps.append(nn.LeakyReLU(opts.lrelu_val))
 
-
         self.model = nn.Sequential(*steps)
 
     def forward(self, x):
 
         return self.model(x)
-
-class ConvUp(nn.Module):
-    def __init__(self, ch_in, kernel, stride, padding, opts, output_padding=0, bias=False, Activation='relu', Norm=False):
-        super(ConvUp, self).__init__()
-
-        self.opts = opts
-
-
-        ch_out = ch_in // 2
-        steps = [nn.ConvTranspose2d(ch_in, ch_out, kernel_size=kernel, stride=stride, padding=padding, output_padding=output_padding, bias=bias)]
-
-        if Activation == 'relu':
-            steps.append(nn.ReLU())
-        elif Activation == 'lrelu':
-            steps.append(nn.LeakyReLU(opts.lrelu_val))
-
-        if Norm:
-            steps.append(nn.BatchNorm1d(ch_out))
-
-        self.model = nn.Sequential(*steps)
-
-    def forward(self, x):
-
-        return self.model(x)
-
 
 class discriminator(nn.Module):
     def __init__(self, opts):
         super(discriminator, self).__init__()
 
-        steps = [ConvDown(opts.image_channel, 3, 2, 1, opts, Activation=opts.D_activation)]
+        steps = [Linear(opts.D_input_size, opts.D_hidden[0], opts, Activation=opts.D_activation, Norm=False)]
 
-        ch_in = opts.image_channel * 2
-        if opts.D_hidden > 1:
-            for i in range(opts.D_hidden - 1):
-                steps.append(ConvDown(ch_in, 3, 2, 1, opts, Activation=opts.D_activation))
-                ch_in *= 2
+        if len(opts.D_hidden) > 1:
+            for i in range(len(opts.D_hidden) - 1):
+                steps.append(Linear(opts.D_hidden[i], opts.D_hidden[i + 1], opts, Activation=opts.D_activation, Norm=False))
 
-        steps.append(ConvDown(ch_in, 4, 1, 0, opts, ch_out=1, Activation=''))
+        steps.append(Linear(opts.D_hidden[-1], opts.D_output_size, opts, Activation='', Norm=False))
 
         self.model = nn.Sequential(*steps)
 
     def forward(self, x):
-        return self.model(x).reshape(opts.batch, 1)
-
+        return self.model(x)
 
 class generator(nn.Module):
     def __init__(self, opts):
         super(generator, self).__init__()
 
-        steps = [ConvUp(opts.noise_dim, 4, 1, 0, opts, Activation=opts.G_activation)]
+        steps = [Linear(opts.noise_dim, opts.G_hidden[0], opts, Activation=opts.G_activation, Norm=False)]
 
-        ch_in = opts.noise_dim // 2
+        if len(opts.G_hidden) > 1:
+            for i in range(len(opts.G_hidden) - 1):
+                steps.append(Linear(opts.G_hidden[i], opts.G_hidden[i + 1], opts, Activation=opts.G_activation))
 
-        if opts.G_hidden > 1:
-            for i in range(opts.G_hidden - 1):
-                steps.append(ConvUp(ch_in, 4, 1, 0, opts, Activation=opts.G_activation))
-                ch_in = ch_in // 2
-
-        steps.append(ConvUp(ch_in, 4, 1, 0, opts, Activation=''))
+        steps.append(Linear(opts.G_hidden[-1], opts.G_output_size, opts, Activation=''))
 
         if opts.G_out_activation == 'tanh':
             final_activation = nn.Tanh()
@@ -123,6 +90,56 @@ class generator(nn.Module):
 
     def forward(self, x):
         return self.model(x)
+"""
+
+
+class generator(nn.Module):
+
+    def __init__(self, opts):
+        super(generator, self).__init__()
+
+        def block(in_shape, out_shape, norm=True):
+            model = [nn.Linear(in_shape, out_shape)]
+            if norm:
+                model.append(nn.BatchNorm1d(out_shape))
+            model.append(nn.LeakyReLU(0.2))
+            return model
+
+        self.model = nn.Sequential(
+            *block(opts.noise_dim, 128, False),
+            *block(128, 256),
+            *block(256, 512),
+            *block(512, 1024),
+            nn.Linear(1024, opts.image_size ** 2),
+            nn.Tanh()
+        )
+
+    def forward(self, x):
+
+        x = self.model(x)
+
+        return x
+
+class discriminator(nn.Module):
+
+    def __init__(self, opts):
+        super(discriminator, self).__init__()
+
+        self.discrim = nn.Sequential(
+            nn.Linear(opts.image_size ** 2, 512),
+            nn.LeakyReLU(0.20),
+            nn.Linear(512, 256),
+            nn.LeakyReLU(0.20),
+            nn.Linear(256, 128),
+            nn.LeakyReLU(0.20),
+            nn.Linear(128, 1)
+        )
+
+    def forward(self, x):
+
+        x = self.discrim(x)
+
+        return x
 
 
 # inception model
@@ -149,7 +166,6 @@ class Net(nn.Module):
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
 
-
 # inception score
 def inception_score(imgs, mnist_model_ref, batch_size=32, splits=1):
     N = len(imgs)
@@ -168,12 +184,12 @@ def inception_score(imgs, mnist_model_ref, batch_size=32, splits=1):
         batch = batch.type(dtype)
         batchv = Variable(batch)
         batch_size_i = batch.size()[0]
-        preds[i * batch_size: i * batch_size + batch_size_i] = get_pred(batchv)
+        preds[i * batch_size : i * batch_size + batch_size_i] = get_pred(batchv)
 
     # Now compute the mean kl-div
     split_scores = []
     for k in range(splits):
-        part = preds[k * (N // splits): (k + 1) * (N // splits), :]
+        part = preds[k * (N // splits) : (k + 1) * (N // splits), :]
         py = np.mean(part, axis=0)
         scores = []
         for i in range(part.shape[0]):
@@ -182,7 +198,6 @@ def inception_score(imgs, mnist_model_ref, batch_size=32, splits=1):
         split_scores.append(np.exp(np.mean(scores)))
 
     return np.mean(split_scores), np.std(split_scores)
-
 
 def train(
         G,
@@ -194,32 +209,39 @@ def train(
         mnist_model_ref,
         iters,
         opts,
-):
+        ):
+
+    x, _ = next(iter(dataloader))
+
+    image_shape = x.shape
 
     for iter_count, (x, _) in enumerate(dataloader):
 
         if iter_count == opts.train_iterations_per_step:
             break
 
+        # placeholder
+        G_loss = torch.zeros(1)
+
         G_optim.zero_grad()
+        # Get real images and flatten it. This is needed as the model uses nn.Linear()
+        x = x.reshape((-1, opts.D_input_size))
 
         # sample random noise of size opts.noise_dim
-        g_fake_seed = torch.randn(len(x), opts.noise_dim, 1, 1, device=device)
+        g_fake_seed = sample_noise(len(x), opts.noise_dim)
 
         # generate images
         fake_images = G(g_fake_seed.to(device))
 
+        if iter_count % opts.n_critic == 0:
 
-        # generate logits for the fake images
-        logits_fake = D(fake_images)
+            # generate logits for the fake images
+            logits_fake = D(fake_images)
 
-        # generate labels
-        labels = torch.ones(logits_fake.size()).to(device)
+            G_loss = -torch.mean(logits_fake)
 
-        G_loss = criterion(logits_fake, labels)
-
-        G_loss.backward()
-        G_optim.step()
+            G_loss.backward()
+            G_optim.step()
 
         # Train discriminator
         D_optim.zero_grad()
@@ -229,8 +251,8 @@ def train(
         logits_fake = D(fake_images.detach())  # detach so the gradient doesn't propagate
 
         # get the loss
-        loss_real = criterion(logits_real, labels)
-        loss_fake = criterion(logits_fake, 1 - labels)
+        loss_real = -torch.mean(logits_real)
+        loss_fake = torch.mean(logits_fake)
 
         # combine the losses
         D_loss = loss_real + loss_fake
@@ -238,7 +260,13 @@ def train(
         D_loss.backward()
         D_optim.step()
 
-        is_score, is_std = inception_score(fake_images, mnist_model_ref)
+        for parameters in D.parameters():
+            '''
+            clip the weights to be between [-clip_value, clip_value]
+            '''
+            parameters.data.clamp_(-opts.clip_value, opts.clip_value)
+
+        is_score, is_std = inception_score(fake_images.reshape(image_shape), mnist_model_ref)
 
         if (iters % opts.print_every == 0):
             print('Iter: {}, D: {:.4}, G:{:.4}, IS:{:.4}'.format(iters, D_loss.item(), G_loss.item(), is_score))
@@ -247,6 +275,7 @@ def train(
 
 
 def main(config, checkpoint_dir=None):
+
     step = 0
     opts = config['opts']
 
@@ -284,11 +313,14 @@ def main(config, checkpoint_dir=None):
                 param_group["lr"] = config["G_lr"]
         if "batch" in config:
             opts.batch = config['batch']
+        if "n_critic" in config:
+            opts.n_critic = config['n_critic']
 
     with FileLock(os.path.expanduser("~/.data.lock")):
         # Download and load the training data
         trainset = datasets.MNIST('MNIST_data/', download=True, train=True, transform=transform)
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=opts.batch, shuffle=True, drop_last=True)
+
 
     if not os.path.isdir(opts.directory):
         os.mkdir(opts.directory)
@@ -297,6 +329,7 @@ def main(config, checkpoint_dir=None):
 
     is_score = 0
     while is_score < opts.target_is:
+
         lossD, lossG, is_score = train(G,
                                        D,
                                        G_solver,
@@ -323,34 +356,37 @@ def main(config, checkpoint_dir=None):
             )
         tune.report(iters=step, lossg=lossG, lossd=lossD, is_score=is_score)
 
-
 def show_result(config, checkpoint_dir):
+
     opts = config['opts']
 
     filelist = []
-
+    
     # Init generator
     G = generator(opts).to(device)
 
     if checkpoint_dir is not None:
+
         path = os.path.join(checkpoint_dir, "checkpoint")
         checkpoint = torch.load(path)
         G.load_state_dict(checkpoint["G"])
 
     for i in range(5):
         # sample random noise of size opts.noise_dim
-        g_fake_seed = torch.randn(opts.batch, opts.noise_dim, 1, 1, device=device)
-
+        g_fake_seed = sample_noise(opts.batch, opts.noise_dim)
+        
         # generate images
-        fake_images = G(g_fake_seed.to(device))
+        fake_images = G(g_fake_seed.to(device)).reshape(-1, opts.image_channel, opts.image_size, opts.image_size)
         '''filename used for saving the image'''
-        filelist.append(
-            save_images_to_directory(fake_images.data.cpu().numpy(), opts.directory, 'generated_image_%s.png' % i))
-
+        filelist.append(save_images_to_directory(fake_images.data.cpu().numpy(), opts.directory, 'generated_image_%s.png' % i))
+        
     # create a gif
     image_to_gif(opts.directory + '/', filelist, duration=1)
 
+
+
 def pbt(opts):
+
     ray.init()
 
     # Download a pre-trained MNIST model for inception score calculation.
@@ -376,20 +412,18 @@ def pbt(opts):
         perturbation_interval=opts.perturb_iter,
         hyperparam_mutations={
             # distribution for resampling
-            "G_lr": lambda: np.random.uniform(1e-2, 1e-5),
-            "D_lr": lambda: np.random.uniform(1e-2, 1e-5),
-            # "batch": lambda: np.random.choice([32, 64, 128, 256, 512], 1),
+            "G_lr": lambda: np.random.uniform(1e-3, 1e-5),
+            "D_lr": lambda: np.random.uniform(1e-3, 1e-5),
         },
     )
 
     config = {
-        "opts": opts,
-        "use_gpu": True,
-        "G_lr": tune.choice([0.0001, 0.0002, 0.0005]),
-        "D_lr": tune.choice([0.0001, 0.0002, 0.0005]),
-        # "batch": tune.choice([32, 64, 128, 256, 512]),
-        "mnist_model_ref": mnist_model_ref,
-    }
+            "opts": opts,
+            "use_gpu": True,
+            "G_lr": tune.choice([0.00005, 0.00001, 0.000025]),
+            "D_lr": tune.choice([0.00005, 0.00001, 0.000025]),
+            "mnist_model_ref": mnist_model_ref,
+        }
 
     reporter = CLIReporter(
         metric_columns=["iters", "lossg", "lossd", "is_score"])
@@ -420,7 +454,6 @@ def pbt(opts):
     best_checkpoint = analysis.get_best_checkpoint(best_trial, metric="is_score")
 
     show_result(config, best_checkpoint)
-
 
 if __name__ == '__main__':
     # options
